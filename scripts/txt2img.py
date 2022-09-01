@@ -232,6 +232,11 @@ def main():
         action='store_true',
         help="disable watermarking output images",
     )
+    parser.add_argument(
+        "--skip_safety_check",
+        action='store_true',
+        help="disable safety check for output images, allows NSFW output",
+    )
     opt = parser.parse_args()
 
     if opt.laion400m:
@@ -313,12 +318,15 @@ def main():
                         x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
                         x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
 
-                        x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
+                        if opt.skip_safety_check:
+                            x_image_torch = torch.from_numpy(x_samples_ddim).permute(0, 3, 1, 2)
+                        else:
+                            x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
+                            x_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
 
-                        x_checked_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
 
                         if not opt.skip_save:
-                            for x_sample in x_checked_image_torch:
+                            for x_sample in x_image_torch:
                                 x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
                                 img = Image.fromarray(x_sample.astype(np.uint8))
                                 if not opt.skip_watermark:
@@ -327,7 +335,7 @@ def main():
                                 base_count += 1
 
                         if not opt.skip_grid:
-                            all_samples.append(x_checked_image_torch)
+                            all_samples.append(x_image_torch)
 
                 if not opt.skip_grid:
                     # additionally, save as grid
