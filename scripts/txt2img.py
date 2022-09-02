@@ -5,7 +5,6 @@ import numpy as np
 from omegaconf import OmegaConf
 from PIL import Image
 from tqdm import tqdm, trange
-from imwatermark import WatermarkEncoder
 from itertools import islice
 from einops import rearrange
 from torchvision.utils import make_grid
@@ -268,6 +267,7 @@ def main():
     outpath = opt.outdir
 
     if not opt.skip_watermark:
+        from imwatermark import WatermarkEncoder
         print("Creating invisible watermark encoder (see https://github.com/ShieldMnt/invisible-watermark)...")
         wm = "StableDiffusionV1"
         wm_encoder = WatermarkEncoder()
