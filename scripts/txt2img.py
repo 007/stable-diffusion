@@ -1,24 +1,21 @@
 import argparse
-import glob
 import os
-import sys
-import time
-from contextlib import contextmanager, nullcontext
+from contextlib import nullcontext
 from itertools import islice
 
-import cv2
 import numpy as np
 import torch
 from einops import rearrange
-from ldm.models.diffusion.ddim import DDIMSampler
-from ldm.models.diffusion.plms import PLMSSampler
-from ldm.util import instantiate_from_config
 from omegaconf import OmegaConf
 from PIL import Image
 from pytorch_lightning import seed_everything
 from torch import autocast
 from torchvision.utils import make_grid
 from tqdm import tqdm, trange
+
+from ldm.models.diffusion.ddim import DDIMSampler
+from ldm.models.diffusion.plms import PLMSSampler
+from ldm.util import instantiate_from_config
 
 try:
     # this silences the annoying "Some weights of the model checkpoint were not used when initializing..." message at start.
@@ -70,7 +67,8 @@ def load_model_from_config(config, ckpt, verbose=False):
 
 def put_watermark(img, wm_encoder=None):
     if wm_encoder is not None:
-        img = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        # for some reason we need to RGB2BGR to make wm_encoder happy, then BGR2RGB to get back to normal colors
+        img = np.array(img)[:, :, ::-1]
         img = wm_encoder.encode(img, "dwtDct")
         img = Image.fromarray(img[:, :, ::-1])
     return img
@@ -304,7 +302,6 @@ def main():
     with torch.no_grad():
         with precision_scope("cuda"):
             with model.ema_scope():
-                tic = time.time()
                 all_samples = list()
                 for n in trange(opt.n_iter, desc="Sampling"):
                     for prompts in tqdm(data, desc="data"):
@@ -362,8 +359,6 @@ def main():
                         img = put_watermark(img, wm_encoder)
                     img.save(os.path.join(outpath, f"grid-{grid_count:04}.png"))
                     grid_count += 1
-
-                toc = time.time()
 
     print(f"Your samples are ready and waiting for you here: \n{outpath}\nEnjoy.")
 
