@@ -1,0 +1,26 @@
+sci-fi
+fantasy
+dark fantasy
+high fantasy
+art deco
+steampunk
+cyberpunk
+dieselpunk
+film noir
+mid-century
+ancient
+historic
+victorian
+medieval
+renaissance
+vintage
+weird west
+synthwave
+gothic
+vaporwave
+surreal
+abstract
+impressionist
+renaissance
+painting
+sculpture
