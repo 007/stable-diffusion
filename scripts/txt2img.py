@@ -343,6 +343,7 @@ def main():
                             metadata.add_text("checkpoint", str(opt.ckpt))
                             metadata.add_text("iter", str(opt.n_iter))
                             metadata.add_text("samples", str(opt.n_samples))
+                            metadata.add_text("scale", str(opt.scale))
                             metadata.add_text("seed", str(opt.seed))
                             metadata.add_text("steps", str(opt.ddim_steps))
 
