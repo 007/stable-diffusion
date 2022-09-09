@@ -103,6 +103,18 @@ def check_safety(x_image):
     return x_checked_image, has_nsfw_concept
 
 
+def img_callback(pred, i):
+    global model, sample_path, base_count, metadata
+    image_tensors = samples_to_images(pred, model)
+    x_image_torch = torch.from_numpy(image_tensors).permute(0, 3, 1, 2)
+    rebase_count = base_count
+    for x_sample in x_image_torch:
+        x_sample = 255.0 * rearrange(x_sample.cpu().numpy(), "c h w -> h w c")
+        img = Image.fromarray(x_sample.astype(np.uint8))
+        img.save(os.path.join(sample_path, f"{rebase_count:05}-{i:03}.png"), pnginfo=metadata)
+        rebase_count += 1
+
+
 # if we're _really_ tight on memory we won't be able to decode all tensors at once
 # iterate on samples(iterations(x)) individually to pull them over to CPU memory
 def samples_to_images(samples, model):
@@ -122,6 +134,7 @@ def samples_to_images(samples, model):
 
 
 def main():
+    global model, sample_path, base_count, metadata
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -152,6 +165,11 @@ def main():
         "--skip_metadata",
         action="store_true",
         help="do not save prompt/seed/step metadata in images.",
+    )
+    parser.add_argument(
+        "--save_steps",
+        action="store_true",
+        help="save images of each step alongside final result",
     )
     parser.add_argument(
         "--ddim_steps",
@@ -322,6 +340,25 @@ def main():
     if opt.fixed_code:
         start_code = torch.randn([opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
 
+    if opt.save_steps:
+        print(f"Saving images for each of {opt.ddim_steps} steps")
+        img_cb = img_callback
+    else:
+        img_cb = None
+
+    metadata = PngInfo()
+    if not opt.skip_metadata:
+        if opt.from_file:
+            metadata.add_text("prompt", str(prompts))
+        else:
+            metadata.add_text("prompt", str(opt.prompt))
+        metadata.add_text("checkpoint", str(opt.ckpt))
+        metadata.add_text("iter", str(opt.n_iter))
+        metadata.add_text("samples", str(opt.n_samples))
+        metadata.add_text("scale", str(opt.scale))
+        metadata.add_text("seed", str(opt.seed))
+        metadata.add_text("steps", str(opt.ddim_steps))
+
     precision_scope = autocast if opt.precision == "autocast" else nullcontext
     with torch.no_grad():
         with precision_scope("cuda"):
@@ -341,6 +378,7 @@ def main():
                             conditioning=c,
                             batch_size=opt.n_samples,
                             shape=shape,
+                            img_callback=img_cb,
                             verbose=False,
                             unconditional_guidance_scale=opt.scale,
                             unconditional_conditioning=uc,
@@ -349,19 +387,6 @@ def main():
                         )
 
                         x_samples_ddim = samples_to_images(samples_ddim, model)
-
-                        metadata = PngInfo()
-                        if not opt.skip_metadata:
-                            if opt.from_file:
-                                metadata.add_text("prompt", str(prompts))
-                            else:
-                                metadata.add_text("prompt", str(opt.prompt))
-                            metadata.add_text("checkpoint", str(opt.ckpt))
-                            metadata.add_text("iter", str(opt.n_iter))
-                            metadata.add_text("samples", str(opt.n_samples))
-                            metadata.add_text("scale", str(opt.scale))
-                            metadata.add_text("seed", str(opt.seed))
-                            metadata.add_text("steps", str(opt.ddim_steps))
 
                         if opt.skip_safety_check:
                             x_image_torch = torch.from_numpy(x_samples_ddim).permute(0, 3, 1, 2)
