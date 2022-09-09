@@ -5,7 +5,6 @@ from itertools import islice
 
 import numpy as np
 import torch
-from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from einops import rearrange
 from omegaconf import OmegaConf
 from PIL import Image
@@ -13,7 +12,6 @@ from pytorch_lightning import seed_everything
 from torch import autocast
 from torchvision.utils import make_grid
 from tqdm import tqdm, trange
-from transformers import AutoFeatureExtractor
 
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.diffusion.plms import PLMSSampler
@@ -27,11 +25,6 @@ try:
     logging.set_verbosity_error()
 except:
     pass
-
-# load safety model
-safety_model_id = "CompVis/stable-diffusion-safety-checker"
-safety_feature_extractor = AutoFeatureExtractor.from_pretrained(safety_model_id)
-safety_checker = StableDiffusionSafetyChecker.from_pretrained(safety_model_id)
 
 
 def chunk(it, size):
@@ -92,6 +85,13 @@ def load_replacement(x):
 
 
 def check_safety(x_image):
+    # load safety model
+    from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
+    from transformers import AutoFeatureExtractor
+
+    safety_model_id = "CompVis/stable-diffusion-safety-checker"
+    safety_feature_extractor = AutoFeatureExtractor.from_pretrained(safety_model_id)
+    safety_checker = StableDiffusionSafetyChecker.from_pretrained(safety_model_id)
     safety_checker_input = safety_feature_extractor(numpy_to_pil(x_image), return_tensors="pt")
     x_checked_image, has_nsfw_concept = safety_checker(images=x_image, clip_input=safety_checker_input.pixel_values)
     assert x_checked_image.shape[0] == len(has_nsfw_concept)
@@ -238,6 +238,11 @@ def main():
         action="store_true",
         help="disable watermarking output images",
     )
+    parser.add_argument(
+        "--skip_safety_check",
+        action="store_true",
+        help="disable safety check for output images, allows NSFW output",
+    )
     opt = parser.parse_args()
 
     if opt.laion400m:
@@ -322,12 +327,14 @@ def main():
                         x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
                         x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
 
-                        x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
-
-                        x_checked_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
+                        if opt.skip_safety_check:
+                            x_image_torch = torch.from_numpy(x_samples_ddim).permute(0, 3, 1, 2)
+                        else:
+                            x_checked_image, has_nsfw_concept = check_safety(x_samples_ddim)
+                            x_image_torch = torch.from_numpy(x_checked_image).permute(0, 3, 1, 2)
 
                         if not opt.skip_save:
-                            for x_sample in x_checked_image_torch:
+                            for x_sample in x_image_torch:
                                 x_sample = 255.0 * rearrange(x_sample.cpu().numpy(), "c h w -> h w c")
                                 img = Image.fromarray(x_sample.astype(np.uint8))
                                 if not opt.skip_watermark:
@@ -336,7 +343,7 @@ def main():
                                 base_count += 1
 
                         if not opt.skip_grid:
-                            all_samples.append(x_checked_image_torch)
+                            all_samples.append(x_image_torch)
 
                 if not opt.skip_grid:
                     # additionally, save as grid
