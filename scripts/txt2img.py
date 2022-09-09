@@ -103,6 +103,24 @@ def check_safety(x_image):
     return x_checked_image, has_nsfw_concept
 
 
+# if we're _really_ tight on memory we won't be able to decode all tensors at once
+# iterate on samples(iterations(x)) individually to pull them over to CPU memory
+def samples_to_images(samples, model):
+    output_samples = []
+    for sample in torch.split(samples, 1):
+        sample_list = []
+        for iteration in torch.split(sample, 1):
+            one_sample = model.decode_first_stage(iteration).cpu()
+            # must cast to float32, `half` doesn't implement some CPU operations?
+            sample_list.append(one_sample.to(torch.float32))
+        output_samples.append(torch.cat(sample_list))
+    output_samples = torch.cat(output_samples)
+
+    output_samples = torch.clamp((output_samples + 1.0) / 2.0, min=0.0, max=1.0)
+    output_samples = output_samples.permute(0, 2, 3, 1).numpy()
+    return output_samples
+
+
 def main():
     parser = argparse.ArgumentParser()
 
@@ -330,9 +348,7 @@ def main():
                             x_T=start_code,
                         )
 
-                        x_samples_ddim = model.decode_first_stage(samples_ddim)
-                        x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
-                        x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
+                        x_samples_ddim = samples_to_images(samples_ddim, model)
 
                         metadata = PngInfo()
                         if not opt.skip_metadata:
