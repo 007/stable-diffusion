@@ -369,10 +369,22 @@ def main():
                             eta=opt.ddim_eta,
                             x_T=start_code,
                         )
+                        # if we're _really_ tight on memory we won't be able to decode all tensors at once
+                        # iterate on samples(iterations(x)) individually to pull them over to CPU memory
+                        # This allows for 97.86% memory utilization on a 1070Ti 8GB with params:
+                        # n_iter=3, n_samples=6, W=640, H=576
 
-                        x_samples_ddim = model.decode_first_stage(samples_ddim)
+                        x_samples_ddim = []
+                        for sample in torch.split(samples_ddim, 1):
+                            s_stack = []
+                            for i in torch.split(sample, 1):
+                                one_sample = model.decode_first_stage(i).cpu()
+                                s_stack.append(one_sample.to(torch.float32))
+                            x_samples_ddim.append(torch.cat(s_stack))
+                        x_samples_ddim = torch.cat(x_samples_ddim)
+
                         x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
-                        x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
+                        x_samples_ddim = x_samples_ddim.permute(0, 2, 3, 1).numpy()
 
                         if opt.skip_safety_check:
                             x_image_torch = torch.from_numpy(x_samples_ddim).permute(0, 3, 1, 2)
