@@ -8,6 +8,7 @@ import torch
 from einops import rearrange
 from omegaconf import OmegaConf
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 from pytorch_lightning import seed_everything
 from torch import autocast
 from torchvision.utils import make_grid
@@ -129,6 +130,11 @@ def main():
         help="do not save individual samples. For speed measurements.",
     )
     parser.add_argument(
+        "--skip_metadata",
+        action="store_true",
+        help="do not save prompt/seed/step metadata in images.",
+    )
+    parser.add_argument(
         "--ddim_steps",
         type=int,
         default=50,
@@ -217,7 +223,7 @@ def main():
     parser.add_argument(
         "--ckpt",
         type=str,
-        default="models/ldm/stable-diffusion-v1/model.ckpt",
+        default="models/ldm/stable-diffusion-v1/stable-diffusion-v1.4.ckpt",
         help="path to checkpoint of model",
     )
     parser.add_argument(
@@ -327,6 +333,19 @@ def main():
                         x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0, min=0.0, max=1.0)
                         x_samples_ddim = x_samples_ddim.cpu().permute(0, 2, 3, 1).numpy()
 
+                        metadata = PngInfo()
+                        if not opt.skip_metadata:
+                            if opt.from_file:
+                                metadata.add_text("prompt", str(prompts))
+                            else:
+                                metadata.add_text("prompt", str(opt.prompt))
+                            metadata.add_text("checkpoint", str(opt.ckpt))
+                            metadata.add_text("iter", str(opt.n_iter))
+                            metadata.add_text("samples", str(opt.n_samples))
+                            metadata.add_text("scale", str(opt.scale))
+                            metadata.add_text("seed", str(opt.seed))
+                            metadata.add_text("steps", str(opt.ddim_steps))
+
                         if opt.skip_safety_check:
                             x_image_torch = torch.from_numpy(x_samples_ddim).permute(0, 3, 1, 2)
                         else:
@@ -339,7 +358,7 @@ def main():
                                 img = Image.fromarray(x_sample.astype(np.uint8))
                                 if not opt.skip_watermark:
                                     img = put_watermark(img, wm_encoder)
-                                img.save(os.path.join(sample_path, f"{base_count:05}.png"))
+                                img.save(os.path.join(sample_path, f"{base_count:05}.png"), pnginfo=metadata)
                                 base_count += 1
 
                         if not opt.skip_grid:
@@ -356,7 +375,7 @@ def main():
                     img = Image.fromarray(grid.astype(np.uint8))
                     if not opt.skip_watermark:
                         img = put_watermark(img, wm_encoder)
-                    img.save(os.path.join(outpath, f"grid-{grid_count:04}.png"))
+                    img.save(os.path.join(outpath, f"grid-{grid_count:04}.png"), pnginfo=metadata)
                     grid_count += 1
 
     print(f"Your samples are ready and waiting for you here: \n{outpath}\nEnjoy.")
