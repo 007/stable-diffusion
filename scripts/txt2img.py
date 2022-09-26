@@ -52,6 +52,7 @@ def load_model_from_config(config, ckpt, verbose=False):
         print(f"Global Step: {pl_sd['global_step']}")
     sd = pl_sd["state_dict"]
     model = instantiate_from_config(config.model)
+    model.half()
     m, u = model.load_state_dict(sd, strict=False)
     if len(m) > 0 and verbose:
         print("missing keys:")
@@ -62,7 +63,6 @@ def load_model_from_config(config, ckpt, verbose=False):
 
     model.cuda()
     model.eval()
-    model.half()
     return model
 
 
@@ -118,11 +118,18 @@ def img_callback(pred, i):
 # if we're _really_ tight on memory we won't be able to decode all tensors at once
 # iterate on samples(iterations(x)) individually to pull them over to CPU memory
 def samples_to_images(samples, model):
+    global opt
+    if opt.ultra_low_vram:
+        previous_device = model.device
+        model.cpu().to(torch.float32)
     output_samples = []
     for sample in torch.split(samples, 1):
         sample_list = []
         for iteration in torch.split(sample, 1):
-            one_sample = model.decode_first_stage(iteration).cpu()
+            if opt.ultra_low_vram:
+                one_sample = model.decode_first_stage(iteration.cpu())
+            else:
+                one_sample = model.decode_first_stage(iteration).cpu()
             # must cast to float32, `half` doesn't implement some CPU operations?
             sample_list.append(one_sample.to(torch.float32))
         output_samples.append(torch.cat(sample_list))
@@ -130,11 +137,13 @@ def samples_to_images(samples, model):
 
     output_samples = torch.clamp((output_samples + 1.0) / 2.0, min=0.0, max=1.0)
     output_samples = output_samples.permute(0, 2, 3, 1).numpy()
+    if opt.ultra_low_vram:
+        model.to(previous_device)
     return output_samples
 
 
 def main():
-    global model, sample_path, base_count, metadata
+    global model, opt, sample_path, base_count, metadata
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -285,6 +294,11 @@ def main():
         "--skip_safety_check",
         action="store_true",
         help="disable safety check for output images, allows NSFW output",
+    )
+    parser.add_argument(
+        "--ultra_low_vram",
+        action="store_true",
+        help="for extremely low vram, do tensor->image conversion entirely in system RAM",
     )
     opt = parser.parse_args()
 
