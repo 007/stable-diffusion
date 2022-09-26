@@ -1207,6 +1207,7 @@ class LatentDiffusion(DDPM):
                 assert x0 is not None
                 img_orig = self.q_sample(x0, ts)
                 img = img_orig * mask + (1.0 - mask) * img
+                del img_orig
 
             if i % log_every_t == 0 or i == timesteps - 1:
                 intermediates.append(x0_partial)

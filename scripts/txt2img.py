@@ -310,6 +310,9 @@ def main():
 
     seed_everything(opt.seed)
 
+    # set tensor default to half to complement model.half
+    torch.set_default_tensor_type(torch.HalfTensor)
+
     config = OmegaConf.load(f"{opt.config}")
     model = load_model_from_config(config, f"{opt.ckpt}")
 
