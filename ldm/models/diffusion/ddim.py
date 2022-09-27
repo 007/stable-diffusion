@@ -149,7 +149,6 @@ class DDIMSampler(object):
             subset_end = int(min(timesteps / self.ddim_timesteps.shape[0], 1) * self.ddim_timesteps.shape[0]) - 1
             timesteps = self.ddim_timesteps[:subset_end]
 
-        intermediates = {"x_inter": [img], "pred_x0": [img]}
         time_range = reversed(range(0, timesteps)) if ddim_use_original_steps else np.flip(timesteps)
         total_steps = timesteps if ddim_use_original_steps else timesteps.shape[0]
         print(f"Running DDIM Sampling with {total_steps} timesteps")
@@ -158,14 +157,13 @@ class DDIMSampler(object):
 
         for i, step in enumerate(iterator):
             index = total_steps - i - 1
-            ts = torch.full((b,), step, device=device, dtype=torch.long)
+            ts = torch.full((b,), step, device=device, dtype=torch.short)
 
             if mask is not None:
                 assert x0 is not None
                 img_orig = self.model.q_sample(x0, ts)  # TODO: deterministic forward pass?
                 img = img_orig * mask + (1.0 - mask) * img
-
-            outs = self.p_sample_ddim(
+            (img, pred_x0) = self.p_sample_ddim(
                 img,
                 cond,
                 ts,
@@ -179,17 +177,16 @@ class DDIMSampler(object):
                 unconditional_guidance_scale=unconditional_guidance_scale,
                 unconditional_conditioning=unconditional_conditioning,
             )
-            img, pred_x0 = outs
+            if not img_callback:
+                del pred_x0
+
             if callback:
                 callback(i)
             if img_callback:
                 img_callback(pred_x0, i)
 
-            if index % log_every_t == 0 or index == total_steps - 1:
-                intermediates["x_inter"].append(img)
-                intermediates["pred_x0"].append(pred_x0)
 
-        return img, intermediates
+        return img, None
 
     @torch.no_grad()
     def p_sample_ddim(
