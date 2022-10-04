@@ -78,7 +78,7 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
                 x = layer(x, context)
             else:
                 x = layer(x)
-        if x.device.type == 'cuda':
+        if x.device.type == "cuda":
             mem_alloc, mem_max = th.cuda.mem_get_info(x.device)
             if mem_alloc > (0.87 * mem_max):
                 th.cuda.empty_cache()

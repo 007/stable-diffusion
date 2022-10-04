@@ -185,7 +185,6 @@ class DDIMSampler(object):
             if img_callback:
                 img_callback(pred_x0, i)
 
-
         return img, None
 
     @torch.no_grad()

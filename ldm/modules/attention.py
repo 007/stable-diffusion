@@ -158,7 +158,7 @@ class CrossAttention(nn.Module):
 
         stats = torch.cuda.memory_stats(q.device)
         mem_active = stats["active_bytes.all.current"]
-        mem_reserved = stats['reserved_bytes.all.current']
+        mem_reserved = stats["reserved_bytes.all.current"]
         mem_free_cuda, _ = torch.cuda.mem_get_info(torch.cuda.current_device())
         mem_free_torch = mem_reserved - mem_active
         mem_free_total = mem_free_cuda + mem_free_torch
@@ -174,8 +174,10 @@ class CrossAttention(nn.Module):
 
         if steps > 64:
             max_res = math.floor(math.sqrt(math.sqrt(mem_free_total / 2.5)) / 8) * 64
-            raise RuntimeError(f'Not enough memory, use lower resolution (max approx. {max_res}x{max_res}). '
-                               f'Need: {mem_required/64/gb:0.1f}GB free, Have:{mem_free_total/gb:0.1f}GB free')
+            raise RuntimeError(
+                f"Not enough memory, use lower resolution (max approx. {max_res}x{max_res}). "
+                f"Need: {mem_required/64/gb:0.1f}GB free, Have:{mem_free_total/gb:0.1f}GB free"
+            )
         slice_size = q.shape[1] // steps if (q.shape[1] % steps) == 0 else q.shape[1]
 
         for i in range(0, q.shape[1], slice_size):
