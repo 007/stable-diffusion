@@ -1,8 +1,14 @@
 import argparse
+import sys
+import json
 import os
 from contextlib import nullcontext
 from itertools import islice
+import time
 
+
+# set before torch import to try and bypass all caching
+#os.environ['PYTORCH_NO_CUDA_MEMORY_CACHING'] = "1"
 import numpy as np
 import torch
 from einops import rearrange
@@ -44,6 +50,10 @@ def numpy_to_pil(images):
 
     return pil_images
 
+def sleeprint(x):
+    print(f"\n{x}\n")
+    time.sleep(20)
+
 
 def load_model_from_config(config, ckpt, verbose=False):
     print(f"Loading model from {ckpt}")
@@ -61,7 +71,6 @@ def load_model_from_config(config, ckpt, verbose=False):
         print("unexpected keys:")
         print(u)
 
-    model.cuda()
     model.eval()
     return model
 
@@ -126,6 +135,8 @@ def samples_to_images(samples, model):
     for sample in torch.split(samples, 1):
         sample_list = []
         for iteration in torch.split(sample, 1):
+            if model.device.type == 'cuda':
+                torch.cuda.empty_cache()
             if opt.ultra_low_vram:
                 one_sample = model.decode_first_stage(iteration.cpu())
             else:
@@ -390,18 +401,23 @@ def main():
                             prompts = list(prompts)
                         c = model.get_learned_conditioning(prompts)
                         shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
-                        samples_ddim, _ = sampler.sample(
-                            S=opt.ddim_steps,
-                            conditioning=c,
-                            batch_size=opt.n_samples,
-                            shape=shape,
-                            img_callback=img_cb,
-                            verbose=False,
-                            unconditional_guidance_scale=opt.scale,
-                            unconditional_conditioning=uc,
-                            eta=opt.ddim_eta,
-                            x_T=start_code,
-                        )
+                        try:
+                            samples_ddim, _ = sampler.sample(
+                                S=opt.ddim_steps,
+                                conditioning=c,
+                                batch_size=opt.n_samples,
+                                shape=shape,
+                                img_callback=img_cb,
+                                verbose=False,
+                                unconditional_guidance_scale=opt.scale,
+                                unconditional_conditioning=uc,
+                                eta=opt.ddim_eta,
+                                x_T=start_code,
+                            )
+                        except torch.cuda.OutOfMemoryError:
+                            print("ran out of memory, dumping snapshot")
+                            print(json.dumps(torch.cuda.memory_snapshot()))
+                            sys.exit(1)
 
                         x_samples_ddim = samples_to_images(samples_ddim, model)
 

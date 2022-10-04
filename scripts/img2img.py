@@ -14,6 +14,7 @@ import torch
 from einops import rearrange, repeat
 from omegaconf import OmegaConf
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 from pytorch_lightning import seed_everything
 from torch import autocast
 from torchvision.utils import make_grid
@@ -22,6 +23,16 @@ from tqdm import tqdm, trange
 from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.models.diffusion.plms import PLMSSampler
 from ldm.util import instantiate_from_config
+
+try:
+    # this silences the annoying "Some weights of the model checkpoint were not used when initializing..." message at start.
+
+    from transformers import logging
+
+    logging.set_verbosity_error()
+except:
+    pass
+
 
 
 def chunk(it, size):
@@ -36,6 +47,7 @@ def load_model_from_config(config, ckpt, verbose=False):
         print(f"Global Step: {pl_sd['global_step']}")
     sd = pl_sd["state_dict"]
     model = instantiate_from_config(config.model)
+    model.half()
     m, u = model.load_state_dict(sd, strict=False)
     if len(m) > 0 and verbose:
         print("missing keys:")
@@ -44,8 +56,6 @@ def load_model_from_config(config, ckpt, verbose=False):
         print("unexpected keys:")
         print(u)
 
-    model.cuda()
-    model.eval()
     return model
 
 
@@ -57,7 +67,7 @@ def load_img(path):
     image = image.resize((w, h), resample=PIL.Image.LANCZOS)
     image = np.array(image).astype(np.float32) / 255.0
     image = image[None].transpose(0, 3, 1, 2)
-    image = torch.from_numpy(image)
+    image = torch.from_numpy(image).half()
     return 2.0 * image - 1.0
 
 
@@ -127,7 +137,7 @@ def main():
     parser.add_argument(
         "--n_samples",
         type=int,
-        default=2,
+        default=1,
         help="how many samples to produce for each given prompt. A.k.a batch size",
     )
     parser.add_argument(
@@ -163,7 +173,7 @@ def main():
     parser.add_argument(
         "--ckpt",
         type=str,
-        default="models/ldm/stable-diffusion-v1/model.ckpt",
+        default="models/ldm/stable-diffusion-v1/stable-diffusion-v1.4.ckpt",
         help="path to checkpoint of model",
     )
     parser.add_argument(
@@ -171,6 +181,11 @@ def main():
         type=int,
         default=42,
         help="the seed (for reproducible sampling)",
+    )
+    parser.add_argument(
+        "--skip_metadata",
+        action="store_true",
+        help="do not save prompt/seed/step metadata in images.",
     )
     parser.add_argument("--precision", type=str, help="evaluate at this precision", choices=["full", "autocast"], default="autocast")
 
@@ -182,6 +197,7 @@ def main():
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)
+    model.eval()
 
     if opt.plms:
         raise NotImplementedError("PLMS sampler not (yet) supported")
@@ -221,6 +237,19 @@ def main():
     t_enc = int(opt.strength * opt.ddim_steps)
     print(f"target t_enc is {t_enc} steps")
 
+    metadata = PngInfo()
+    if not opt.skip_metadata:
+        if opt.from_file:
+            metadata.add_text("prompt", str(prompts))
+        else:
+            metadata.add_text("prompt", str(opt.prompt))
+        metadata.add_text("checkpoint", str(opt.ckpt))
+        metadata.add_text("iter", str(opt.n_iter))
+        metadata.add_text("samples", str(opt.n_samples))
+        metadata.add_text("scale", str(opt.scale))
+        metadata.add_text("seed", str(opt.seed))
+        metadata.add_text("steps", str(opt.ddim_steps))
+
     precision_scope = autocast if opt.precision == "autocast" else nullcontext
     with torch.no_grad():
         with precision_scope("cuda"):
@@ -253,7 +282,7 @@ def main():
                         if not opt.skip_save:
                             for x_sample in x_samples:
                                 x_sample = 255.0 * rearrange(x_sample.cpu().numpy(), "c h w -> h w c")
-                                Image.fromarray(x_sample.astype(np.uint8)).save(os.path.join(sample_path, f"{base_count:05}.png"))
+                                Image.fromarray(x_sample.astype(np.uint8)).save(os.path.join(sample_path, f"{base_count:05}.png"), pnginfo=metadata)
                                 base_count += 1
                         all_samples.append(x_samples)
 

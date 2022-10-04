@@ -1,3 +1,4 @@
+import time
 from contextlib import contextmanager
 
 import pytorch_lightning as pl
@@ -311,6 +312,10 @@ class AutoencoderKL(pl.LightningModule):
         moments = self.quant_conv(h)
         posterior = DiagonalGaussianDistribution(moments)
         return posterior
+
+    def sleeprint(self, msg):
+        time.sleep(5)
+        print(f"\n{msg}\n")
 
     def decode(self, z):
         z = self.post_quant_conv(z)

@@ -243,25 +243,27 @@ class ResBlock(TimestepBlock):
     def _forward(self, x, emb):
         if self.updown:
             in_rest, in_conv = self.in_layers[:-1], self.in_layers[-1]
-            h = in_rest(x)
-            h = self.h_upd(h)
+            h0 = in_rest(x)
+            h1 = self.h_upd(h0)
+            del h0
             x = self.x_upd(x)
-            h = in_conv(h)
+            h2 = in_conv(h1)
+            del h1
         else:
-            h = self.in_layers(x)
-        emb_out = self.emb_layers(emb).type(h.dtype)
-        while len(emb_out.shape) < len(h.shape):
+            h2 = self.in_layers(x)
+        emb_out = self.emb_layers(emb).type(h2.dtype)
+        while len(emb_out.shape) < len(h2.shape):
             emb_out = emb_out[..., None]
         if self.use_scale_shift_norm:
             out_norm, out_rest = self.out_layers[0], self.out_layers[1:]
             scale, shift = th.chunk(emb_out, 2, dim=1)
-            h = out_norm(h) * (1 + scale) + shift
-            del scale, shift
-            h = out_rest(h)
+            h3 = out_norm(h2) * (1 + scale) + shift
+            del scale, shift, h2
+            h = out_rest(h3)
         else:
-            h = h + emb_out
-            del emb_out
-            h = self.out_layers(h)
+            h3 = h2 + emb_out
+            del emb_out, h2
+            h = self.out_layers(h3)
         return self.skip_connection(x) + h
 
 
