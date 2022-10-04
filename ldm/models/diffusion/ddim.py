@@ -28,7 +28,7 @@ class DDIMSampler(object):
         )
         alphas_cumprod = self.model.alphas_cumprod
         assert alphas_cumprod.shape[0] == self.ddpm_num_timesteps, "alphas have to be defined for each timestep"
-        to_torch = lambda x: x.clone().detach().to(torch.float32).to(self.model.device)
+        to_torch = lambda x: x.clone().detach().to(torch.half).to(self.model.device)
 
         self.register_buffer("betas", to_torch(self.model.betas))
         self.register_buffer("alphas_cumprod", to_torch(alphas_cumprod))
@@ -180,6 +180,7 @@ class DDIMSampler(object):
             if not img_callback:
                 del pred_x0
 
+            torch.cuda.empty_cache()
             if callback:
                 callback(i)
             if img_callback:
@@ -227,16 +228,22 @@ class DDIMSampler(object):
         # select parameters corresponding to the currently considered timestep
         a_t = torch.full((b, 1, 1, 1), alphas[index], device=device)
         a_prev = torch.full((b, 1, 1, 1), alphas_prev[index], device=device)
+        del alphas_prev
         sigma_t = torch.full((b, 1, 1, 1), sigmas[index], device=device)
+        del sigmas
         sqrt_one_minus_at = torch.full((b, 1, 1, 1), sqrt_one_minus_alphas[index], device=device)
 
         # current prediction for x_0
         pred_x0 = (x - sqrt_one_minus_at * e_t) / a_t.sqrt()
+        del a_t
         if quantize_denoised:
             pred_x0, _, *_ = self.model.first_stage_model.quantize(pred_x0)
+            del _
         # direction pointing to x_t
         dir_xt = (1.0 - a_prev - sigma_t ** 2).sqrt() * e_t
+        del e_t
         noise = sigma_t * noise_like(x.shape, device, repeat_noise) * temperature
+        del sigma_t
         if noise_dropout > 0.0:
             noise = torch.nn.functional.dropout(noise, p=noise_dropout)
         x_prev = a_prev.sqrt() * pred_x0 + dir_xt + noise
