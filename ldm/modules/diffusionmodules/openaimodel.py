@@ -78,6 +78,10 @@ class TimestepEmbedSequential(nn.Sequential, TimestepBlock):
                 x = layer(x, context)
             else:
                 x = layer(x)
+        if x.device.type == "cuda":
+            mem_alloc, mem_max = th.cuda.mem_get_info(x.device)
+            if mem_alloc > (0.87 * mem_max):
+                th.cuda.empty_cache()
         return x
 
 
@@ -252,9 +256,11 @@ class ResBlock(TimestepBlock):
             out_norm, out_rest = self.out_layers[0], self.out_layers[1:]
             scale, shift = th.chunk(emb_out, 2, dim=1)
             h = out_norm(h) * (1 + scale) + shift
+            del scale, shift
             h = out_rest(h)
         else:
             h = h + emb_out
+            del emb_out
             h = self.out_layers(h)
         return self.skip_connection(x) + h
 
@@ -302,6 +308,7 @@ class AttentionBlock(nn.Module):
         x = x.reshape(b, c, -1)
         qkv = self.qkv(self.norm(x))
         h = self.attention(qkv)
+        del qkv
         h = self.proj_out(h)
         return (x + h).reshape(b, c, *spatial)
 
@@ -347,8 +354,10 @@ class QKVAttentionLegacy(nn.Module):
         q, k, v = qkv.reshape(bs * self.n_heads, ch * 3, length).split(ch, dim=1)
         scale = 1 / math.sqrt(math.sqrt(ch))
         weight = th.einsum("bct,bcs->bts", q * scale, k * scale)  # More stable with f16 than dividing afterwards
+        del q, k
         weight = th.softmax(weight.float(), dim=-1).type(weight.dtype)
         a = th.einsum("bts,bcs->bct", weight, v)
+        del v, weight
         return a.reshape(bs, -1, length)
 
     @staticmethod
@@ -381,8 +390,10 @@ class QKVAttention(nn.Module):
             (q * scale).view(bs * self.n_heads, ch, length),
             (k * scale).view(bs * self.n_heads, ch, length),
         )  # More stable with f16 than dividing afterwards
+        del q, k
         weight = th.softmax(weight.float(), dim=-1).type(weight.dtype)
         a = th.einsum("bts,bcs->bct", weight, v.reshape(bs * self.n_heads, ch, length))
+        del v, weight
         return a.reshape(bs, -1, length)
 
     @staticmethod
@@ -706,6 +717,7 @@ class UNetModel(nn.Module):
         for module in self.output_blocks:
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb, context)
+        del emb
         h = h.type(x.dtype)
         if self.predict_codebook_ids:
             return self.id_predictor(h)
