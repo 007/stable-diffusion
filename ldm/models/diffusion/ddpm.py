@@ -1485,6 +1485,7 @@ class DiffusionWrapper(pl.LightningModule):
         assert self.conditioning_key in [None, "concat", "crossattn", "hybrid", "adm"]
 
     def forward(self, x, t, c_concat: list = None, c_crossattn: list = None):
+        torch.cuda.empty_cache()
         if self.conditioning_key is None:
             out = self.diffusion_model(x, t)
         elif self.conditioning_key == "concat":
@@ -1493,6 +1494,7 @@ class DiffusionWrapper(pl.LightningModule):
         elif self.conditioning_key == "crossattn":
             cc = torch.cat(c_crossattn, 1)
             del c_crossattn
+            torch.cuda.empty_cache()
             out = self.diffusion_model(x, t, context=cc)
         elif self.conditioning_key == "hybrid":
             xc = torch.cat([x] + c_concat, dim=1)
@@ -1504,6 +1506,7 @@ class DiffusionWrapper(pl.LightningModule):
         else:
             raise NotImplementedError()
 
+        torch.cuda.empty_cache()
         return out
 
 
