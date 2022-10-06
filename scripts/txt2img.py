@@ -145,6 +145,13 @@ def main():
         help="the prompt to render",
     )
     parser.add_argument(
+        "--nprompt",
+        type=str,
+        nargs="?",
+        default="",
+        help="negative prompt input, things to move away from in latent space",
+    )
+    parser.add_argument(
         "--outdir",
         type=str,
         nargs="?",
@@ -355,6 +362,10 @@ def main():
             metadata.add_text("prompt", str(prompts))
         else:
             metadata.add_text("prompt", str(opt.prompt))
+
+        if opt.nprompt != "":
+            metadata.add_text("nprompt", str(opt.nprompt))
+
         metadata.add_text("checkpoint", str(opt.ckpt))
         metadata.add_text("iter", str(opt.n_iter))
         metadata.add_text("samples", str(opt.n_samples))
@@ -371,7 +382,7 @@ def main():
                     for prompts in tqdm(data, desc="data"):
                         uc = None
                         if opt.scale != 1.0:
-                            uc = model.get_learned_conditioning(batch_size * [""])
+                            uc = model.get_learned_conditioning(batch_size * [opt.nprompt])
                         if isinstance(prompts, tuple):
                             prompts = list(prompts)
                         c = model.get_learned_conditioning(prompts)
